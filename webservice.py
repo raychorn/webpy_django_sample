@@ -3,7 +3,6 @@ import sys
 import web
 
 import Queue
-import threading
 
 import json
 import urllib
@@ -17,32 +16,8 @@ __SERVICE_NAME__ = 'dirwatcherservice'
 
 LOG_FILENAME = './%s.log' % (__SERVICE_NAME__)
 
-class MyTimedRotatingFileHandler(handlers.TimedRotatingFileHandler):
-    def __init__(self, filename, maxBytes=0, when='h', interval=1, backupCount=0, encoding=None, delay=False, utc=False):
-	handlers.TimedRotatingFileHandler.__init__(self, filename=filename, when=when, interval=interval, backupCount=backupCount, encoding=encoding, delay=delay, utc=utc)
-	self.maxBytes = maxBytes
-    
-    def shouldRollover(self, record):
-	response = handlers.TimedRotatingFileHandler.shouldRollover(self, record)
-	if (response == 0):
-	    if self.stream is None:                 # delay was set...
-		self.stream = self._open()
-	    if self.maxBytes > 0:                   # are we rolling over?
-		msg = "%s\n" % self.format(record)
-		try:
-		    self.stream.seek(0, 2)  #due to non-posix-compliant Windows feature
-		    if self.stream.tell() + len(msg) >= self.maxBytes:
-			return 1
-		except:
-		    pass
-	    return 0
-	return response
-
 logger = logging.getLogger(__SERVICE_NAME__)
 handler = logging.FileHandler(LOG_FILENAME)
-#handler = handlers.TimedRotatingFileHandler(LOG_FILENAME, when='d', interval=1, backupCount=30, encoding=None, delay=False, utc=False)
-#handler = MyTimedRotatingFileHandler(LOG_FILENAME, maxBytes=1000000, when='d', backupCount=30)
-#handler = handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=1000000, backupCount=30, encoding=None, delay=False)
 formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 handler.setFormatter(formatter)
 handler.setLevel(logging.INFO)
@@ -56,47 +31,6 @@ ch.setLevel(logging.INFO)
 logger.addHandler(ch)
 
 logging.getLogger().setLevel(logging.INFO)
-
-def main_is_frozen():
-    import imp
-    return (hasattr(sys, "frozen") or hasattr(sys, "importers") or imp.is_frozen("__main__"))
-
-if main_is_frozen():
-    import zipfile
-    import pkg_resources
-    
-    my_file = pkg_resources.resource_stream('__main__',sys.executable)
-    print '%s' % (my_file)
-    
-    import tempfile
-    __vyperlogix__ = tempfile.NamedTemporaryFile().name
-    
-    zip = zipfile.ZipFile(my_file)
-    data = zip.read("vyperlogix_2_7.zip")
-    file = open(__vyperlogix__, 'wb')
-    file.write(data)
-    file.flush()
-    file.close()
-    __vyperlogix__ = file.name
-    print '__vyperlogix__ --> "%s".' % (__vyperlogix__)
-    
-    import atexit
-    @atexit.register
-    def __cleanup__():
-	print '__cleanup__ --> "%s".' % (__vyperlogix__)
-	os.remove(__vyperlogix__)
-	
-    import signal
-    signal.signal(signal.SIGTERM, __cleanup__)
-
-    import zipextimporter
-    zipextimporter.install()
-    sys.path.insert(0, __vyperlogix__)
-    
-    print 'BEGIN:'
-    for f in sys.path:
-	print f
-    print 'END !!'
 
 __imports__ = [f for f in sys.path if (f.replace(os.sep,'/').split('/')[-1].lower().find('django') > -1)]
 
@@ -144,72 +78,7 @@ class Index:
         """ Show page """
         return render.index()
 
-__command_property__ = 'command'
-__beginSession_command__ = 'begin-session'
-__log_command__ = 'log-message'
-
-__folder_property__ = 'folder'
-__product_property__ = 'product'
-__message_property__ = 'message'
-__level_property__ = 'level'
-__commands__ = {
-    __beginSession_command__:__beginSession_command__,
-    __folder_property__:__folder_property__,
-    __product_property__:__product_property__,
-    __command_property__:__command_property__,
-    __message_property__:__message_property__,
-    __level_property__:__level_property__,
-    __log_command__:__log_command__
-}
-__valid_commands__ = list(set(__commands__.keys()))
 __loggerFileName__ = None
-
-def flush_handlers():
-    try:
-	for handler in list(logger.handlers):
-	    handler.flush()
-    except:
-	pass
-    
-def change_logging_product(product):
-    from vyperlogix.misc import ObjectTypeName
-    try:
-	for handler in list(logger.handlers):
-	    if (ObjectTypeName.typeClassName(handler) == 'logging.handlers.TimedRotatingFileHandler'):
-		handler.flush()
-		b = os.path.basename(handler.baseFilename)
-		toks = os.path.splitext(b)
-		parts = toks[0].split('-')
-		__is__ = False
-		if (len(parts) == 1):
-		    parts.append(product)
-		    __is__ = True
-		elif (parts[-1] != product):
-		    parts[-1] = product
-		    __is__ = True
-		if (__is__):
-		    toks[0] = parts.join('-')
-		    b = toks.join('')
-		    handler.baseFilename = handler.baseFilename.replace(os.path.basename(handler.baseFilename),b)
-		    logger.info('Changed logging to product "%s".' % (product))
-    except:
-	pass
-
-class CustomJSONENcoder(json.JSONEncoder):
-    def default(self, o):
-	from vyperlogix.misc import ObjectTypeName
-	obj = {'__class__':ObjectTypeName.typeClassName(o)}
-	try:
-	    for k,v in o.__dict__.iteritems():
-		obj[k] = v
-	except AttributeError:
-	    if (ObjectTypeName.typeClassName(o) == 'file'):
-		obj['name'] = o.name
-		obj['mode'] = o.mode
-	    else:
-		pass
-	    pass
-	return obj
 
 from standalone.conf import settings
 
@@ -245,7 +114,7 @@ app.notfound = notfound
 
 if (__name__ == '__main__'):
     '''
-    python dirwatcherservice.py 127.0.0.1:9999
+    python webservice.py 127.0.0.1:9999
     '''
     from optparse import OptionParser
     
@@ -275,20 +144,9 @@ if (__name__ == '__main__'):
 		    'ENGINE': 'django.db.backends.mysql',
 		    'NAME': __database_name__,
 		    'USER' : 'root',
-		    'PASSWORD' : 'peekab00',
+		    'PASSWORD' : 'your-password-goes-here',
 		    'HOST' : '127.0.0.1',
-		    'PORT' : '33306',
-		}
-	    }
-	elif (DOMAIN_NAME in ['HORNRA3']):
-	    DATABASES = {
-		'default': {
-		    'ENGINE': 'django.db.backends.mysql',
-		    'NAME': __database_name__,
-		    'USER' : 'root',
-		    'PASSWORD' : 'peekab00',
-		    'HOST' : '127.0.0.1',
-		    'PORT' : '33307',
+		    'PORT' : '3306',
 		}
 	    }
     elif options.sqlite3:
@@ -296,13 +154,6 @@ if (__name__ == '__main__'):
 
 	print 'INFO: Using sqlite3... Database "%s".' % (__database_name__)
 	if (DOMAIN_NAME in ['HPDV7-6163us']):
-	    DATABASES = {
-		'default': {
-	            'ENGINE': 'django.db.backends.sqlite3',
-		    'NAME': __database_name__,
-		}
-	    }
-	elif (DOMAIN_NAME in ['HORNRA3']):
 	    DATABASES = {
 		'default': {
 	            'ENGINE': 'django.db.backends.sqlite3',
@@ -335,18 +186,12 @@ if (__name__ == '__main__'):
     has_binding = any([_utils.__regex_valid_ip_and_port__.match(arg) for arg in args])
     if (not has_binding):
 	sys.argv.append('127.0.0.1:9999')
-    print 'BEGIN: args'
-    for arg in sys.argv:
-	print arg
-    print 'END!! args'
-	
+
     def __init__():
 	logger.info('%s %s started !!!' % (__SERVICE_NAME__,__version__))
 	flush_handlers()
         app.run()
-    
-    t = threading.Thread(target=__init__)
-    t.daemon = False
-    t.start()
-    
+
+    __init__()    
+
 	
