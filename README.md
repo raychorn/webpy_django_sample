@@ -8,6 +8,9 @@ web.py has a rather weak connection to anything one might wish to call a databas
 
 See also: https://pypi.python.org/pypi/django-standalone for some insights into how this was done.
 
+Requires Django 1.4.x however with some work it might work with Django 1.5.x or later.
+
+
 The project template provides support for both mysql and sqlite3 however any django db backend could be used; these are
 the ones I chose to use for my sample.
 
